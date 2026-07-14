@@ -1,0 +1,261 @@
+#!/usr/bin/env bash
+
+
+
+############## User-Config ---- do your edits ##########################
+
+APPNAME="protonvpn-random"
+
+#Choose a main location
+MAIN_LOCATION="GB"
+PROBABILITY_MAIN_LOCATION=50					#0=Off 1-99=maybe 100=always
+
+#Add or delete countrys
+#You should not reuse MAIN_LOCATION 
+RANDOM_POOL=(
+"SI"
+"SO"
+"ZA"
+"KR"
+"SS"
+"ES"
+"LK"
+)
+
+PROBABILITY_SECURECORE=50						#0=Off 1-99=maybe 100=on
+
+SWITCH_VPN_ONOFF="ON"
+SECONDS_SWITCH_VPN_MAX=7200
+SECONDS_SWITCH_VPN_MIN=3600
+
+ 
+NOTIFY_ALLOFF="NO" 							#use OFF to mute all NOTIFY_						
+NOTIFY_VPN_ERROR_ONOFF="ON"
+NOTIFY_VPN_OK_ONOFF="ON"
+NOTIFY_EXIT_ONOFF="ON"
+
+
+
+
+#Allowed retries after the first connection failure
+MAX_CON_FAILS=3									
+
+########################################################################
+#----------------------------------------------------------------------#
+
+TXT_EXIT_HANDLER="$APPNAME stopped!"
+TXT_SWITCH_OFF="VPN Switch off." 
+TXT_SLEEP_HANDLER="seconds to change connection"
+
+TXT_CON_FAILED="Connection failed more than $MAX_CON_FAILS"
+TXT_CON_ERROR="Connection with server failed"
+TXT_CON_OK="Connected with server"
+
+TXT_REQUIRED_PROTON="Protonvpn is missing."
+TXT_REQUIRED_NOTIFY="notify-send is missing - try: sudo apt install libnotify-bin"
+TXT_REQUIRED_TPUT="tput is missing - try: sudo apt install tput ncurses-bin"
+
+#------------ Error codes ---------------------------------------------#
+
+#10 = Missing Dependency
+#11 = Invalid Config
+
+#---------------Function ----------------------------------------------#
+
+
+
+
+DepCheck(){
+	local dep="$1"
+	if ! command -v "$dep" &>/dev/null ; then
+		return 1
+	fi
+}
+
+ValCountry(){
+	local -a pool=("$@")
+	local element
+	(("${#pool[@]}" > 0 )) || return 1
+	 
+	for element in "${pool[@]}"; do
+		[[ "$element" =~ ^[A-Z]{2}$ ]] || return 1
+	done
+}
+
+ValOnOff(){
+	local -a strings=("$@")
+	for element in "${strings[@]}"; do
+		[[ "$element" == "ON" || "$element" == "OFF" || "$element" == "NO" ]] || \
+		 return 1
+	done
+}
+
+ValInteger(){
+	local -a integers=("$@")
+	local element
+	
+	for element in "${integers[@]}"; do
+		[[ "$element" =~ ^[0-9]+$ ]] || return 1
+	done
+}
+
+ValPercentage(){
+	local -a percent=("$@")
+	local element
+	
+	for element in "${percent[@]}"; do
+		(( element >= 0 && element <= 100 )) || return 1
+	done
+}
+
+ValConfig(){
+	if ! ValCountry "$MAIN_LOCATION"; then
+		return 1
+	fi
+	
+	if ! ValCountry "${RANDOM_POOL[@]}"; then
+		return 1
+	fi
+	
+	if ! ValOnOff "$SWITCH_VPN_ONOFF" "$NOTIFY_ALLOFF" "$NOTIFY_VPN_ERROR_ONOFF" \
+	"$NOTIFY_VPN_OK_ONOFF" "$NOTIFY_EXIT_ONOFF"; then
+		return 1
+	fi
+	
+	
+	if ! ValInteger "$SECONDS_SWITCH_VPN_MAX" "$SECONDS_SWITCH_VPN_MIN" \
+	"$PROBABILITY_SECURECORE" "$PROBABILITY_MAIN_LOCATION" "$MAX_CON_FAILS"
+	then
+		return 1
+	fi
+	
+	if ! ValPercentage "$PROBABILITY_SECURECORE" "$PROBABILITY_MAIN_LOCATION"; then
+		return 1
+	fi
+	
+	[[ "$SWITCH_VPN_ONOFF" == "ON" || "$SWITCH_VPN_ONOFF" == "OFF" ]] || return 1
+	(( SECONDS_SWITCH_VPN_MIN < SECONDS_SWITCH_VPN_MAX )) || return 1
+	
+}
+
+#----------------------------------------------------------------------#
+
+NotifyVpnError(){
+	[[ "$NOTIFY_VPN_ERROR_ONOFF" == "ON" ]] || return 0
+	local server="$1"
+	notify-send --urgency=critical --app-name="$APPNAME" -- "$APPNAME" "${TXT_CON_ERROR}: $server"
+}
+
+NotifyVpnOk() {
+	[[ "$NOTIFY_VPN_OK_ONOFF" == "ON" ]] || return 0
+	local server="$1"
+	notify-send --urgency=normal  --expire-time=10000 --app-name="$APPNAME" -- "$APPNAME" "${TXT_CON_OK} : $server"
+}
+
+#----------------------------------------------------------------------#
+RandomPercent(){
+		printf  "%s\n" "$(( RANDOM % 100 + 1 ))"
+	}
+	
+RandomizeVpn(){
+	local r
+	local rr
+	local country
+	local securecore=""
+	
+	r="$( RandomPercent )"
+	if (( r <= PROBABILITY_MAIN_LOCATION )); then
+		country="$MAIN_LOCATION"
+	else
+		r="$(( RANDOM % ${#RANDOM_POOL[@]} ))"
+		country="${RANDOM_POOL[$r]}"
+	fi
+	
+	
+	
+	rr="$( RandomPercent )"
+	(( rr <= PROBABILITY_SECURECORE )) && securecore="--securecore"
+	
+	if protonvpn connect "$securecore" --country "$country"; then
+		NotifyVpnOk "$country"
+		return 0
+	else
+		NotifyVpnError "$country"
+		return 1
+	fi
+}
+
+RandomizeSwitchTime(){
+	local max="$1"
+	local min="$2"
+	local seconds
+	
+	seconds=$(( RANDOM % (max - min + 1) + min ))	
+	printf "%s" "$seconds" 
+}
+
+
+SleepHandler(){
+		local seconds="$1"
+		local i
+			
+		for (( i=0; i < seconds; i++ )); do
+			printf "%s\n" "-- $(( seconds - i )) -- $TXT_SLEEP_HANDLER "
+			sleep 1
+			tput cuu1
+			tput el
+		done
+	}
+	
+ExitHandler(){
+	local errcode="$1"
+	local text="$2"
+	
+	if DepCheck "notify-send"; then
+		[[ "$NOTIFY_EXIT_ONOFF" == "ON" ]] && \
+		notify-send --urgency=critical --app-name="$APPNAME" "$APPNAME" "$text - $TXT_EXIT_HANDLER"
+	fi
+	(( errcode > 0 && errcode < 10 )) && protonvpn disconnect
+	exit "$errcode"
+}
+
+#----------------------------------------------------------------------#
+
+
+
+init(){
+local count_fails=0
+local wait_retry=1
+while true; do
+	
+	if  RandomizeVpn; then
+		[[ "$SWITCH_VPN_ONOFF" == "OFF" ]] && ExitHandler 0 "$TXT_SWITCH_OFF"
+		count_fails="0"
+	else
+		count_fails="$(( count_fails + 1 ))"
+		wait_retry=$(( count_fails * 5 ))
+		(( count_fails <= MAX_CON_FAILS )) || ExitHandler 1 "$TXT_CON_FAILED"
+		sleep "$wait_retry"
+		continue
+	fi
+	SleepHandler "$( RandomizeSwitchTime $SECONDS_SWITCH_VPN_MAX $SECONDS_SWITCH_VPN_MIN )"
+		
+done
+}
+
+#----------------------------------------------------------------------#
+DepCheck "notify-send" || ExitHandler 10  "$TXT_REQUIRED_NOTIFY"
+DepCheck "tput" || ExitHandler 10  "$TXT_REQUIRED_TPUT"
+DepCheck "protonvpn" || ExitHandler 10 "$TXT_REQUIRED_PROTON"
+
+ValConfig || ExitHandler 11 "You made the config invalid - gg"
+
+
+if [[ "$NOTIFY_ALLOFF" == "OFF" ]]; then
+	NOTIFY_VPN_ERROR_ONOFF="OFF"
+	NOTIFY_VPN_OK_ONOFF="OFF"
+	NOTIFY_EXIT_ONOFF="OFF"
+fi
+
+init 
+
