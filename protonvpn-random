@@ -4,10 +4,10 @@
 
 ############## User-Config ---- do your edits ##########################
 
-APPNAME="protonvpn-random"
+APPNAME="$(basename "$0" )"
 
 #Choose a main location
-MAIN_LOCATION="GB"
+MAIN_LOCATION="UK"
 PROBABILITY_MAIN_LOCATION=50					#0=Off 1-99=maybe 100=always
 
 #Add or delete countrys
@@ -33,7 +33,7 @@ NOTIFY_ALLOFF="NO" 							#use OFF to mute all NOTIFY_
 NOTIFY_VPN_ERROR_ONOFF="ON"
 NOTIFY_VPN_OK_ONOFF="ON"
 NOTIFY_EXIT_ONOFF="ON"
-
+NOTIFY_ASK_ONOFF="ON" 
 
 
 
@@ -51,20 +51,121 @@ TXT_CON_FAILED="Connection failed more than $MAX_CON_FAILS"
 TXT_CON_ERROR="Connection with server failed"
 TXT_CON_OK="Connected with server"
 
+TXT_KILLSWITCH_ERROR="Critical Error: kill-switch on failed!"
+TXT_LOCKFILE_ERROR="Lockfile could not opened."
+TXT_RUN_ERROR="already run"
+
 TXT_REQUIRED_PROTON="Protonvpn is missing."
 TXT_REQUIRED_NOTIFY="notify-send is missing - try: sudo apt install libnotify-bin"
-TXT_REQUIRED_TPUT="tput is missing - try: sudo apt install tput ncurses-bin"
+TXT_REQUIRED_TPUT="tput is missing - try: sudo apt install ncurses-bin"
+TXT_REQUIRED_AWK="awk is missing - try: sudo apt install mawk"
+
+TXT_ASK_KILLSWITCH_A="Proton Kill-Switch is off"
+TXT_ASK_KILLSWITCH_B="Disconnect, enable it, and reconnect?"
 
 #------------ Error codes ---------------------------------------------#
 
 #10 = Missing Dependency
 #11 = Invalid Config
+#12 = kill-switch on failed
+
+#---------------Function T-Out ----------------------------------------#
+Out(){
+	local text="$1"
+	RunInTerminal && printf "%s\n" "$text"
+}
+
+OutErr(){
+	local text="$1"
+	RunInTerminal && printf '\033[38;5;196m%s\033[0m\n' "$text"
+}
 
 #---------------Function ----------------------------------------------#
+EnsureSingleInstance(){
+	local lockfile
+	lockfile="${XDG_RUNTIME_DIR:-/tmp}/${APPNAME}.${UID}.lock"
+
+exec 9>"$lockfile" || {
+    OutErr "$TXT_LOCKFILE_ERROR" >&2
+    exit 1
+}
+
+if ! flock -n 9; then
+    OutErr "$TXT_RUN_ERROR $APPNAME" >&2
+    exit 1
+fi
+}
+
+RunInTerminal(){
+if ! { [[ -t 1 && -n ${TERM:-} ]] && tput cols >/dev/null 2>&1; } then
+	return 1
+fi
+}
 
 
+#--------------- Functions calling protonvpn --------------------------#
 
+KillSwitchOn(){
+	if ! protonvpn config set kill-switch standard; then
+		ExitHandler 12 "$TXT_KILLSWITCH_ERROR"
+	fi
+}
 
+DisconnectVpn(){
+	protonvpn disconnect
+}
+
+#-------------- Functions KillSwitchGuard -----------------------------#
+
+AskPermissionKillSwitch(){
+	local usrinp
+	if [[ "$NOTIFY_ALLOFF" = "OFF" || "$NOTIFY_ASK_ONOFF" = "OFF" ]]; then
+		if RunInTerminal; then
+			while true; do
+				read -rp "Enter: y or n >>" usrinp
+				usrinp="${usrinp,,}"
+				case "$usrinp" in
+					y|yy|ye|yes)
+						return 0
+					;;	
+					n|nn|no)
+						return 1
+					;;
+				esac
+			done
+		fi
+	else
+		NotifyAsk "$TXT_ASK_KILLSWITCH_A" "$TXT_ASK_KILLSWITCH_B"
+	fi
+}
+		
+CheckConnection(){
+	local status
+	status="$(protonvpn status | awk 'tolower($0) ~ /status/ { print $2; exit }')"
+	[[ "${status,,}" == "connected" ]] || return 1
+}
+
+CheckKillSwitch(){
+	local killswitch
+	killswitch="$( protonvpn config list   | awk 'tolower($0) ~ /kill-switch/ { print $2; exit }' )"
+	[[ "${killswitch,,}" == "standard" ]] || return 1	
+}
+
+KillSwitchGuard(){
+	if ! CheckKillSwitch; then
+		if CheckConnection; then
+			if AskPermissionKillSwitch; then
+				DisconnectVpn
+				KillSwitchOn
+			fi
+		else
+			KillSwitchOn
+		fi
+	fi
+}
+
+#-------------- Functions validate script start  ----------------------#
+	
 DepCheck(){
 	local dep="$1"
 	if ! command -v "$dep" &>/dev/null ; then
@@ -84,6 +185,7 @@ ValCountry(){
 
 ValOnOff(){
 	local -a strings=("$@")
+	local element
 	for element in "${strings[@]}"; do
 		[[ "$element" == "ON" || "$element" == "OFF" || "$element" == "NO" ]] || \
 		 return 1
@@ -118,7 +220,7 @@ ValConfig(){
 	fi
 	
 	if ! ValOnOff "$SWITCH_VPN_ONOFF" "$NOTIFY_ALLOFF" "$NOTIFY_VPN_ERROR_ONOFF" \
-	"$NOTIFY_VPN_OK_ONOFF" "$NOTIFY_EXIT_ONOFF"; then
+	"$NOTIFY_VPN_OK_ONOFF" "$NOTIFY_EXIT_ONOFF" "$NOTIFY_ASK_ONOFF"; then
 		return 1
 	fi
 	
@@ -138,7 +240,7 @@ ValConfig(){
 	
 }
 
-#----------------------------------------------------------------------#
+#------------------Functions Notify -----------------------------------#
 
 NotifyVpnError(){
 	[[ "$NOTIFY_VPN_ERROR_ONOFF" == "ON" ]] || return 0
@@ -152,7 +254,15 @@ NotifyVpnOk() {
 	notify-send --urgency=normal  --expire-time=10000 --app-name="$APPNAME" -- "$APPNAME" "${TXT_CON_OK} : $server"
 }
 
-#----------------------------------------------------------------------#
+NotifyAsk(){
+	local title="$1"
+	local question="$2"
+	usrinp=$( notify-send --urgency=critical --app-name="$APPNAME" --action="y=yes" --action="n=no"  "$title" "$question" )
+	[[ "$usrinp" == "y" ]] || return 1
+}
+
+#----------------- Functions randomizing -------------------------------#
+
 RandomPercent(){
 		printf  "%s\n" "$(( RANDOM % 100 + 1 ))"
 	}
@@ -161,7 +271,7 @@ RandomizeVpn(){
 	local r
 	local rr
 	local country
-	local securecore=""
+	local -a securecore=()
 	
 	r="$( RandomPercent )"
 	if (( r <= PROBABILITY_MAIN_LOCATION )); then
@@ -174,9 +284,9 @@ RandomizeVpn(){
 	
 	
 	rr="$( RandomPercent )"
-	(( rr <= PROBABILITY_SECURECORE )) && securecore="--securecore"
+	(( rr <= PROBABILITY_SECURECORE )) && securecore+=("--securecore")
 	
-	if protonvpn connect "$securecore" --country "$country"; then
+	if protonvpn connect "${securecore[@]}" --country "$country"; then
 		NotifyVpnOk "$country"
 		return 0
 	else
@@ -194,17 +304,21 @@ RandomizeSwitchTime(){
 	printf "%s" "$seconds" 
 }
 
+#--------------- Functions Handler ------------------------------------#
 
 SleepHandler(){
 		local seconds="$1"
 		local i
-			
-		for (( i=0; i < seconds; i++ )); do
-			printf "%s\n" "-- $(( seconds - i )) -- $TXT_SLEEP_HANDLER "
-			sleep 1
-			tput cuu1
-			tput el
-		done
+		if RunInTerminal; then	
+			for (( i=0; i < seconds; i++ )); do
+				Out "-- $(( seconds - i )) -- $TXT_SLEEP_HANDLER "
+				sleep 1
+				tput cuu1
+				tput el
+			done
+		else
+			sleep "$seconds"
+		fi
 	}
 	
 ExitHandler(){
@@ -215,7 +329,13 @@ ExitHandler(){
 		[[ "$NOTIFY_EXIT_ONOFF" == "ON" ]] && \
 		notify-send --urgency=critical --app-name="$APPNAME" "$APPNAME" "$text - $TXT_EXIT_HANDLER"
 	fi
-	(( errcode > 0 && errcode < 10 )) && protonvpn disconnect
+	
+	if (( errcode < 1 )); then
+		Out "$text"
+	else
+		OutErr "$text"
+	fi
+	
 	exit "$errcode"
 }
 
@@ -223,39 +343,50 @@ ExitHandler(){
 
 
 
-init(){
-local count_fails=0
-local wait_retry=1
-while true; do
+main(){
+	local count_fails=0
+	local wait_retry=1
 	
-	if  RandomizeVpn; then
-		[[ "$SWITCH_VPN_ONOFF" == "OFF" ]] && ExitHandler 0 "$TXT_SWITCH_OFF"
-		count_fails="0"
-	else
-		count_fails="$(( count_fails + 1 ))"
-		wait_retry=$(( count_fails * 5 ))
-		(( count_fails <= MAX_CON_FAILS )) || ExitHandler 1 "$TXT_CON_FAILED"
-		sleep "$wait_retry"
-		continue
-	fi
-	SleepHandler "$( RandomizeSwitchTime $SECONDS_SWITCH_VPN_MAX $SECONDS_SWITCH_VPN_MIN )"
+	EnsureSingleInstance
+	
+	while true; do
 		
-done
+		KillSwitchGuard
+		
+		if  RandomizeVpn; then
+			[[ "$SWITCH_VPN_ONOFF" == "OFF" ]] && ExitHandler 0 "$TXT_SWITCH_OFF"
+			count_fails="0"
+		else
+			count_fails="$(( count_fails + 1 ))"
+			wait_retry=$(( count_fails * 5 ))
+			(( count_fails <= MAX_CON_FAILS )) || ExitHandler 1 "$TXT_CON_FAILED"
+			sleep "$wait_retry"
+			continue
+		fi
+		SleepHandler "$( RandomizeSwitchTime $SECONDS_SWITCH_VPN_MAX $SECONDS_SWITCH_VPN_MIN )"
+			
+	done
 }
 
 #----------------------------------------------------------------------#
-DepCheck "notify-send" || ExitHandler 10  "$TXT_REQUIRED_NOTIFY"
-DepCheck "tput" || ExitHandler 10  "$TXT_REQUIRED_TPUT"
-DepCheck "protonvpn" || ExitHandler 10 "$TXT_REQUIRED_PROTON"
-
-ValConfig || ExitHandler 11 "You made the config invalid - gg"
-
+ValConfig || ExitHandler 11 "Well played... You made the config invalid"
 
 if [[ "$NOTIFY_ALLOFF" == "OFF" ]]; then
 	NOTIFY_VPN_ERROR_ONOFF="OFF"
 	NOTIFY_VPN_OK_ONOFF="OFF"
 	NOTIFY_EXIT_ONOFF="OFF"
+elif [[ "$NOTIFY_ALLOFF" == "ON" && \
+	"$NOTIFY_VPN_ERROR_ONOFF" == "OFF" && \
+	"$NOTIFY_VPN_OK_ONOFF" == "OFF" && \
+	"$NOTIFY_EXIT_ONOFF" == "OFF" && \
+	"$NOTIFY_ASK_ONOFF" == "OFF" ]]; then
+	NOTIFY_ALLOFF="OFF"
 fi
 
-init 
+[[ "$NOTIFY_ALLOFF" != "OFF" ]] && \
+{ DepCheck "notify-send" || ExitHandler 10  "$TXT_REQUIRED_NOTIFY"; }
+DepCheck "tput" || ExitHandler 10  "$TXT_REQUIRED_TPUT"
+DepCheck "awk" || ExitHandler 10 "$TXT_REQUIRED_AWK"
+DepCheck "protonvpn" || ExitHandler 10 "$TXT_REQUIRED_PROTON"
 
+main

@@ -1,14 +1,14 @@
 #IMPORTANT: Read notes at end of file
 
-# ProtonVpnRandomizer
+# proton-random
 
-ProtonVpnRandomizer is a small Bash tool for the **Proton VPN command-line interface**.
+proton-random is a small Bash tool for the **Proton VPN command-line interface**.
 
 It uses the `protonvpn` CLI command. It does **not** control the Proton VPN desktop application or its graphical interface.
 
 The script connects to random Proton VPN locations and can automatically change the connection after a random amount of time.
 
-> ProtonVpnRandomizer is built from small, independent functions that work together like gears — robust, easy to read, and simple to adapt.
+> proton-random is built from small, independent functions that work together like gears — robust, easy to read, and simple to adapt.
 
 ## Features
 
@@ -135,19 +135,19 @@ The waiting time between failed attempts increases automatically.
 Make the script executable:
 
 ```bash
-chmod +x ProtonVpnRandomizer.sh
+chmod +x proton-random.sh
 ```
 
 Run it:
 
 ```bash
-./ProtonVpnRandomizer.sh
+./proton-random.sh
 ```
 
 It can also be started with Bash:
 
 ```bash
-bash ProtonVpnRandomizer.sh
+bash proton-random.sh
 ```
 
 The terminal shows the remaining time before the next connection change.
@@ -157,7 +157,7 @@ The terminal shows the remaining time before the next connection change.
 Copy the script to `/usr/local/bin`:
 
 ```bash
-sudo cp ProtonVpnRandomizer.sh /usr/local/bin/protonvpn-randomizer
+sudo cp proton-random.sh /usr/local/bin/protonvpn-randomizer
 sudo chmod 755 /usr/local/bin/protonvpn-randomizer
 ```
 
@@ -196,7 +196,7 @@ Example content:
 ```ini
 [Desktop Entry]
 Type=Application
-Name=ProtonVpnRandomizer
+Name=proton-random
 Comment=Automatically changes Proton VPN CLI connections
 Exec=/usr/local/bin/protonvpn-randomizer
 Terminal=true/false
