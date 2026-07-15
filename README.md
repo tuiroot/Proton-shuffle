@@ -1,6 +1,6 @@
-# proton-random
+# protonvpn-random
 
-`proton-random` is a small Bash tool for the Proton VPN command-line interface.
+`protonvpn-random` is a small Bash tool for the Proton VPN command-line interface.
 
 It connects to configurable Proton VPN countries, optionally prefers a main location, enables Secure Core with a configurable probability, and changes the VPN connection after random time intervals.
 
@@ -23,13 +23,13 @@ The script uses the `protonvpn` CLI command directly. It does not control the Pr
 Make the script executable:
 
 ```bash
-chmod +x proton-random
+chmod +x protonvpn-random
 ```
 
 Run it:
 
 ```bash
-./proton-random
+./protonvpn-random
 ```
 
 The Proton VPN CLI must already be installed, configured and logged in.
@@ -42,6 +42,6 @@ Detailed installation, configuration, notification, autostart and Kill Switch in
 
 ## Notes
 
-`proton-random` depends on the commands and output format provided by the Proton VPN CLI. Future CLI changes may require corresponding changes to the script.
+`protonvpn-random` depends on the commands and output format provided by the Proton VPN CLI. Future CLI changes may require corresponding changes to the script.
 
 The integrated Kill Switch handling uses Proton VPN's standard Kill Switch. It is not a replacement for a separate permanent firewall-based Kill Switch.
