@@ -223,13 +223,13 @@ echo "$?"
 ## Notes
 The script depends on the commands and options provided by the Proton VPN CLI. Future changes to the CLI may require changes to the script.
 
-## IMPORTANT: ----------------------------------------------------------
-## IMPORTANT: Kill Switch during server changes IMPORTANT 
-## IMPORTANT: ----------------------------------------------------------
+## ---------------------------------------------------------------------
+## IMPORTANT: Kill Switch during server changes  
+## ---------------------------------------------------------------------
 
+## ---------------------------------------------------------------------
 For maximum protection between connection changes, you should still consider testing and using a separate, permanent Kill Switch configuration.
-
-BUT:
+## ---------------------------------------------------------------------
 
 The Proton VPN documentation states that the Kill Switch remains active during a server change.
 The expected connection flow is:
