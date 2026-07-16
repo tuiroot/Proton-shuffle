@@ -64,7 +64,7 @@ TXT_ASK_KILLSWITCH_A="Proton Kill-Switch is off"
 TXT_ASK_KILLSWITCH_B="Disconnect, enable it, and reconnect?"
 
 TXT_MESSAGE_START="Proton VPN commands remain available while the script is running.
-Press Ctrl+C to stop the protonvpn random script.
+Press Ctrl+alt+c or close terminal to stop the protonvpn random script.
 Stopping proton-random does not disconnect the active VPN connection.
 
 Thank you for choosing proton-random.
