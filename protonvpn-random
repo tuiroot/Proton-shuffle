@@ -66,17 +66,17 @@ Stopping proton-random does not disconnect the active VPN connection.
 Thank you for choosing proton-random.
 
 "
-TXT_BACKGROUND="$APPNAME will run in the background, you can close this terminal.
-To stop application type: 'kill -9 $PID' in any termnial.
-Stopping proton-random does not disconnect the active VPN connection.
-
-Thank you for choosing proton-random."
+TXT_BACKGROUND=
 
 #---------------Function background -----------------------------------#
 
 background(){
     "$0" >/dev/null & PID=$!
-    printf "%s\n" "$$TXT_BACKGROUND"
+    printf "%s\n" "$APPNAME will run in the background, you can close this terminal.
+To stop application type: 'kill -9 $PID' in any termnial. Fallback: ps -aux | grep $APPNAME
+Stopping proton-random does not disconnect the active VPN connection.
+
+Thank you for choosing proton-random."
     disown $PID 2>/dev/null
     exit 0
 }
@@ -131,9 +131,16 @@ OutH1() {
 }
 
 #---------------Function ----------------------------------------------#
+cleanup() {
+    exec 9>&-  
+    #rm -f "$lockfile"  
+    exit
+}
+
 EnsureSingleInstance(){
 	local lockfile
-	lockfile="${XDG_RUNTIME_DIR:-/tmp}/${APPNAME}.${UID}.lock"
+	lockfile="/tmp/${APPNAME}.${UID}.lock"
+	trap cleanup EXIT TERM INT
 
 exec 9>"$lockfile" || {
     OutErr "$TXT_LOCKFILE_ERROR" >&2
