@@ -3,25 +3,27 @@
 
 
 ############## User-Config ---- do your edits ##########################
-
 APPNAME="$(basename "$0" )"
 
-MAIN_LOCATION="US"
+
+MODE="ROUTE"
+MAIN_LOCATION="CH"
 PROBABILITY_MAIN_LOCATION=0					
 
 RANDOM_POOL=(
-"Amsterdam"
-"US#1"
-"PL"
-"AT"
-"CH"
-"PL"
-"UK"
+"US-FREE#36"
+"US-GA#29-TOR"
+"New York"
+"Washington"
+"NO"
+"IQ#1"
+"Baghdad"
+"Marseille"
 )
 
 SWITCH_VPN_ONOFF="ON"
-SECONDS_SWITCH_VPN_MAX=10800
-SECONDS_SWITCH_VPN_MIN=600
+SECONDS_SWITCH_VPN_MAX=20 #10800
+SECONDS_SWITCH_VPN_MIN=10 #600
 
 PROBABILITY_SECURECORE=0
 						
@@ -59,51 +61,19 @@ TXT_REQUIRED_AWK="awk is missing - try: sudo apt install mawk"
 TXT_ASK_KILLSWITCH_A="Proton Kill-Switch is off"
 TXT_ASK_KILLSWITCH_B="Disconnect, enable it, and reconnect?"
 
+
+TXT_THANK_YOU="Thank you for choosing protonvpn-random."
 TXT_MESSAGE_START="Proton VPN commands remain available while the script is running.
 Press Ctrl+alt+c or close terminal to stop the protonvpn random script.
-Stopping proton-random does not disconnect the active VPN connection.
+Stopping protonvpn-random does not disconnect the active VPN connection.
 
-Thank you for choosing proton-random.
+$TXT_THANK_YOU
 "
-#---------------Function background -----------------------------------#
 
-background(){
-    "$0" >/dev/null & PID=$!
-    printf "%s\n" "$APPNAME will run in the background, you can close this terminal.
-To stop application type: 'kill -9 $PID' in any termnial. Fallback: ps -aux | grep $APPNAME
-Stopping proton-random does not disconnect the active VPN connection.
-
-Thank you for choosing proton-random."
-    disown $PID 2>/dev/null
-    exit 0
-}
-
-#---------------Function help -----------------------------------------#
-
-help(){
-    local help
-    read -r -d '' help << EOM
-Usage: $APPNAME [options]
-  -b               Start script and keep it running in the background even if terminal is closed
-  -h --help        Show this help snippet
-EOM
-    echo "$help"
-    exit
-}
-
-#---------------Parse command-line options-----------------------------#
-
-options=$(getopt -o hb --long help: -- "$@")
-[[ $? -eq 0 ]] || help
-eval set -- "$options"
-while true; do
-    case "$1" in
-        -h|--help) help; break;;
-        -b) background; shift;;
-        --) break;;
-        *) shift;;
-    esac
-done
+TXT_HELP_R="Start in random mode"
+TXT_HELP_L="Start in route(lane) mode"
+TXT_HELP_B="Start script and keep it running in the background even if terminal is closed"
+TXT_HELP_H="Show this help snippet"
 
 #------------ Error codes ---------------------------------------------#
 
@@ -111,7 +81,181 @@ done
 #11 = Invalid Config
 #12 = kill-switch on failed
 
-#---------------Function T-Out ----------------------------------------#
+
+############### commandline options ####################################
+
+RunBackground(){
+    "$0" >/dev/null & PID=$!
+    printf "%s\n" "$APPNAME will run in the background, you can close this terminal.
+To stop application type: 'kill -9 $PID' in any terminal. 
+
+$TXT_THANK_YOU"
+    disown $PID 2>/dev/null
+    exit 0
+}
+
+#--------------- Function help ----------------------------------------#
+
+Help(){
+    local help
+    read -r -d '' help << EOM
+Usage: $APPNAME [options]
+  -r 			   $TXT_HELP_R
+  -l			   $TXT_HELP_L
+  -b               $TXT_HELP_B
+  -h --help        $TXT_HELP_H
+EOM
+    echo "$help"
+    exit
+}
+
+#--------------- Function set -----------------------------------------#
+SetRandomMode(){
+	MODE="RANDOM"
+}
+
+SetRouteMode(){
+	MODE="ROUTE"
+}
+
+#---------------Function ParseCommandLineOptions ----------------------#
+
+ParseCommandLineOptions(){
+	local cli_options=("$@")
+	options=$(getopt -o hbrl --long help -- "${cli_options[@]}")
+	[[ $? -eq 0 ]] || help
+	eval set -- "$options"
+	while true; do
+		case "$1" in
+			-h|--help) Help; break;;
+			-r) SetRandomMode; shift;;
+			-l) SetRouteMode; shift;;
+			-b) RunBackground; shift;;
+			--) break;;
+			*) shift;;
+		esac
+	done
+}
+
+################ Validate ##############################################
+	
+DepCheck(){
+	local dep="$1"
+	if ! command -v "$dep" &>/dev/null ; then
+		return 1
+	fi
+}
+
+ValCountry(){
+	local -a country="$1"
+	[[ "$country" =~ ^[A-Z]{2}$ ]] || return 1
+}
+
+ValCity(){
+	local city="$1"
+	[[ "$city" =~ ^([a-zA-Z]{3,10})(\ [a-zA-Z]{3,10}){0,2}$ ]] || return 1;
+}
+
+ValServer(){
+	local server="$1"
+	[[ "$server" =~ ^[A-Z]{2}[-]?[A-Z]{0,4}#[1-9][1-9]{0,2}(-TOR)?$ ]] || return 1
+}
+
+
+ValPool(){
+	local -a pool=("$@")
+	local element
+	(("${#pool[@]}" > 0 )) || return 1
+	 
+	for element in "${pool[@]}"; do
+		if ValCountry "$element"; then
+			continue
+		elif ValCity "$element"; then
+			continue
+		elif ValServer "$element"; then
+			continue
+		else
+			return 1
+		fi
+	done
+}
+
+ValOnOff(){
+	local -a strings=("$@")
+	local element
+	for element in "${strings[@]}"; do
+		[[ "$element" == "ON" || "$element" == "OFF" || "$element" == "NO" ]] || \
+		 return 1
+	done
+}
+
+ValMode(){
+	local -a strings=("$@")
+	local element
+	for element in "${strings[@]}"; do
+		[[ "$element" == "RANDOM" || "$element" == "ROUTE" ]] || \
+		 return 1
+	done
+}
+
+ValInteger(){
+	local -a integers=("$@")
+	local element
+	
+	for element in "${integers[@]}"; do
+		[[ "$element" =~ ^[0-9]+$ ]] || return 1
+	done
+}
+
+ValPercentage(){
+	local -a percent=("$@")
+	local element
+	
+	for element in "${percent[@]}"; do
+		(( element >= 0 && element <= 100 )) || return 1
+	done
+}
+
+ValConfig(){
+	if ! ValPool "$MAIN_LOCATION"; then
+		return 1
+	fi
+	
+	if ! ValPool "${RANDOM_POOL[@]}"; then
+		return 1
+	fi
+	
+	if ! ValOnOff "$SWITCH_VPN_ONOFF" "$NOTIFY_ALLOFF" "$NOTIFY_VPN_ERROR_ONOFF" \
+	"$NOTIFY_VPN_OK_ONOFF" "$NOTIFY_EXIT_ONOFF" "$NOTIFY_ASK_ONOFF" "$PROTON_INFO_ONOFF" \
+	"$START_MESSAGE_ONOFF"; then
+		return 1
+	fi
+	
+	if ! ValMode "$MODE"; then
+		return 1
+	fi
+	
+	if ! ValInteger "$SECONDS_SWITCH_VPN_MAX" "$SECONDS_SWITCH_VPN_MIN" \
+	"$PROBABILITY_SECURECORE" "$PROBABILITY_MAIN_LOCATION" "$MAX_CON_FAILS" \
+	"$INCREASING_DELAY"; then
+		return 1
+	fi
+	
+	if ! ValPercentage "$PROBABILITY_SECURECORE" "$PROBABILITY_MAIN_LOCATION"; then
+		return 1
+	fi
+	
+	[[ "$SWITCH_VPN_ONOFF" == "ON" || "$SWITCH_VPN_ONOFF" == "OFF" ]] || return 1
+	(( SECONDS_SWITCH_VPN_MIN < SECONDS_SWITCH_VPN_MAX )) || return 1
+	
+}
+
+
+
+
+
+############## Output ##################################################
+
 Out(){
 	local text="$1"
 	RunInTerminal && printf "%s\n" "$text"
@@ -119,7 +263,7 @@ Out(){
 
 OutErr(){
 	local text="$1"
-	RunInTerminal && printf '\033[38;5;196m%s\033[0m\n' "$text"
+	RunInTerminal && printf '\033[38;5;196m%s\033[0m\n' "$text" >&2
 }
 
 OutH1() {
@@ -127,10 +271,38 @@ OutH1() {
 	RunInTerminal && printf '\n\033[38;5;38m%s\033[0m\n' "$text"
 }
 
-#---------------Function ----------------------------------------------#
+################ Notify ################################################
+
+NotifyVpnError(){
+	[[ "$NOTIFY_VPN_ERROR_ONOFF" == "ON" ]] || return 0
+	local server="$1"
+	notify-send --urgency=critical --app-name="$APPNAME" -- "$APPNAME" "${TXT_CON_ERROR}: $server"
+}
+
+NotifyVpnOk() {
+	[[ "$NOTIFY_VPN_OK_ONOFF" == "ON" ]] || return 0
+	local server="$1"
+	notify-send --urgency=normal  --expire-time=10000 --app-name="$APPNAME" -- "$APPNAME" "${TXT_CON_OK} : $server"
+}
+
+NotifyAsk(){
+	local title="$1"
+	local question="$2"
+	usrinp=$( notify-send --urgency=critical --app-name="$APPNAME" --action="y=yes" --action="n=no"  "$title" "$question" )
+	[[ "$usrinp" == "y" ]] || return 1
+}
+
+MessageStart(){
+	if RunInTerminal; then
+		[[ "$PROTON_INFO_ONOFF" == "ON" ]] && VpnInfo
+		[[ "$START_MESSAGE_ONOFF" == "ON" ]] && OutH1 "$TXT_MESSAGE_START"
+	fi
+}
+	
+############### Process control ########################################
+
 cleanup() {
-    exec 9>&-  
-    #rm -f "$lockfile"  
+   exec 9>&- 
     exit
 }
 
@@ -150,14 +322,28 @@ if ! flock -n 9; then
 fi
 }
 
+
 RunInTerminal(){
 if ! { [[ -t 1 && -n ${TERM:-} ]] && tput cols >/dev/null 2>&1; } then
 	return 1
 fi
 }
 
+############### protonvpn cli  #########################################
 
-#--------------- Functions calling protonvpn --------------------------#
+ProtonVpnConnect(){
+	local dst="$1"
+	local -a seccore=("$2")
+	if ValCountry "$dst"; then
+		protonvpn connect "${seccore[@]}" --country "$dst"  
+	elif ValCity "$dst"; then
+		protonvpn connect "${seccore[@]}" --city "$dst"
+	elif ValServer "$dst"; then
+		#no securecore !
+		protonvpn connect "$dst"
+	fi
+}
+
 
 KillSwitchOn(){
 	if ! protonvpn config set kill-switch standard; then
@@ -165,15 +351,17 @@ KillSwitchOn(){
 	fi
 }
 
+
 DisconnectVpn(){
 	protonvpn disconnect
 }
+
 
 VpnInfo(){
 	[[ "$PROTON_INFO_ONOFF" == "ON" ]] && protonvpn
 }
 
-#-------------- Functions KillSwitchGuard -----------------------------#
+############### KillSwitchGuard ########################################
 
 AskPermissionKillSwitch(){
 	local usrinp
@@ -222,173 +410,32 @@ KillSwitchGuard(){
 	fi
 }
 
-#-------------- Functions validate script start  ----------------------#
+
 	
-DepCheck(){
-	local dep="$1"
-	if ! command -v "$dep" &>/dev/null ; then
-		return 1
-	fi
-}
-
-ValCountry(){
-	local -a country="$1"
-	[[ "$country" =~ ^[A-Z]{2}$ ]] || return 1
-}
-
-ValCity(){
-	local city="$1"
-	[[ "$city" =~ ^[a-zA-Z\ ]{3,25}$ ]] || return 1
-}
-
-ValServer(){
-	local server="$1"
-	[[ "$server" =~ ^[A-Z]{2}#[1-9][1-9]{0,2}$ ]] || return 1
-}
-
-
-ValPool(){
-	local -a pool=("$@")
-	local element
-	(("${#pool[@]}" > 0 )) || return 1
-	 
-	for element in "${pool[@]}"; do
-		if ValCountry "$element"; then
-			continue
-		elif ValCity "$element"; then
-			continue
-		elif ValServer "$element"; then
-			continue
-		else
-			return 1
-		fi
-	done
-}
-
-ValOnOff(){
-	local -a strings=("$@")
-	local element
-	for element in "${strings[@]}"; do
-		[[ "$element" == "ON" || "$element" == "OFF" || "$element" == "NO" ]] || \
-		 return 1
-	done
-}
-
-ValInteger(){
-	local -a integers=("$@")
-	local element
-	
-	for element in "${integers[@]}"; do
-		[[ "$element" =~ ^[0-9]+$ ]] || return 1
-	done
-}
-
-ValPercentage(){
-	local -a percent=("$@")
-	local element
-	
-	for element in "${percent[@]}"; do
-		(( element >= 0 && element <= 100 )) || return 1
-	done
-}
-
-ValConfig(){
-	if ! ValPool "$MAIN_LOCATION"; then
-		return 1
-	fi
-	
-	if ! ValPool "${RANDOM_POOL[@]}"; then
-		return 1
-	fi
-	
-	if ! ValOnOff "$SWITCH_VPN_ONOFF" "$NOTIFY_ALLOFF" "$NOTIFY_VPN_ERROR_ONOFF" \
-	"$NOTIFY_VPN_OK_ONOFF" "$NOTIFY_EXIT_ONOFF" "$NOTIFY_ASK_ONOFF" "$PROTON_INFO_ONOFF" \
-	"$START_MESSAGE_ONOFF"; then
-		return 1
-	fi
-	
-	
-	if ! ValInteger "$SECONDS_SWITCH_VPN_MAX" "$SECONDS_SWITCH_VPN_MIN" \
-	"$PROBABILITY_SECURECORE" "$PROBABILITY_MAIN_LOCATION" "$MAX_CON_FAILS" \
-	"$INCREASING_DELAY"; then
-		return 1
-	fi
-	
-	if ! ValPercentage "$PROBABILITY_SECURECORE" "$PROBABILITY_MAIN_LOCATION"; then
-		return 1
-	fi
-	
-	[[ "$SWITCH_VPN_ONOFF" == "ON" || "$SWITCH_VPN_ONOFF" == "OFF" ]] || return 1
-	(( SECONDS_SWITCH_VPN_MIN < SECONDS_SWITCH_VPN_MAX )) || return 1
-	
-}
-
-#------------------Functions Notify -----------------------------------#
-
-NotifyVpnError(){
-	[[ "$NOTIFY_VPN_ERROR_ONOFF" == "ON" ]] || return 0
-	local server="$1"
-	notify-send --urgency=critical --app-name="$APPNAME" -- "$APPNAME" "${TXT_CON_ERROR}: $server"
-}
-
-NotifyVpnOk() {
-	[[ "$NOTIFY_VPN_OK_ONOFF" == "ON" ]] || return 0
-	local server="$1"
-	notify-send --urgency=normal  --expire-time=10000 --app-name="$APPNAME" -- "$APPNAME" "${TXT_CON_OK} : $server"
-}
-
-NotifyAsk(){
-	local title="$1"
-	local question="$2"
-	usrinp=$( notify-send --urgency=critical --app-name="$APPNAME" --action="y=yes" --action="n=no"  "$title" "$question" )
-	[[ "$usrinp" == "y" ]] || return 1
-}
-
-MessageStart(){
-	if RunInTerminal; then
-		[[ "$PROTON_INFO_ONOFF" == "ON" ]] && VpnInfo
-		[[ "$START_MESSAGE_ONOFF" == "ON" ]] && OutH1 "$TXT_MESSAGE_START"
-	fi
-}
 		
-		
-#----------------- Functions randomizing -------------------------------#
-ConnectionMode(){
-	local dst="$1"
-	if ValCountry "$dst"; then
-			printf "%s\n" "server"
-	elif ValCity "$dst"; then
-			printf "%s\n" "country"
-	elif ValServer "$dst"; then
-		printf "%s\n" "city"
-	fi
-}
-
-ProtonVpnConnect(){
-	local dst="$1"
-	local -a seccore=("$2")
-	if ValCountry "$dst"; then
-		protonvpn connect "${seccore[@]}" --country "$dst"  
-	elif ValCity "$dst"; then
-		protonvpn connect "${seccore[@]}" --city "$dst"
-	elif ValServer "$dst"; then
-		#no securecore !
-		protonvpn connect "$dst"
-	fi
-}
+################ Randomize VPN #######################################
 
 RandomPercent(){
 		printf  "%s\n" "$(( RANDOM % 100 + 1 ))"
 	}
-		
+	
+RandomSecureCore(){
+	local securecore=""
+	local r
+	
+	r="$( RandomPercent )"
+	(( r <= PROBABILITY_SECURECORE )) && securecore="--securecore"
+	
+	printf "%s\n" "$securecore"
+	
+	}
+			
 RandomizeVpn(){
 	local r
-	local rr
 	local server
 	local securecore=""
 	
 	r="$( RandomPercent )"
-	
 	
 	if (( r <= PROBABILITY_MAIN_LOCATION )); then
 		server="$MAIN_LOCATION"
@@ -397,18 +444,9 @@ RandomizeVpn(){
 		server="${RANDOM_POOL[$r]}"
 	fi
 	
-	rr="$( RandomPercent )"
-	(( rr <= PROBABILITY_SECURECORE )) && securecore="--securecore"
-	
-	
-	if ProtonVpnConnect "$server" "$securecore"; then
-		NotifyVpnOk "$server"
-		return 0
-	else
-		NotifyVpnError "$server" 
-		return 1
-	fi
+	ProtonVpnConnect "$server" "$( RandomSecureCore )"
 }
+
 
 RandomizeSwitchTime(){
 	local max="$1"
@@ -418,6 +456,54 @@ RandomizeSwitchTime(){
 	seconds=$(( RANDOM % (max - min + 1) + min ))	
 	printf "%s" "$seconds" 
 }
+
+RandomModeVpn(){
+	while true; do
+		
+		KillSwitchGuard
+		
+		if  RandomizeVpn; then
+			NotifyVpnOk "$server"
+			
+			[[ "$SWITCH_VPN_ONOFF" == "OFF" ]] && ExitHandler 0 "$TXT_SWITCH_OFF"
+			count_fails="0"
+		else
+			NotifyVpnError "$server" 
+			count_fails="$(( count_fails + 1 ))"
+			wait_retry=$(( count_fails * INCREASING_DELAY ))
+			(( count_fails <= MAX_CON_FAILS )) || ExitHandler 1 "$TXT_CON_FAILED"
+			sleep "$wait_retry"
+			continue
+		fi
+		SleepHandler "$( RandomizeSwitchTime $SECONDS_SWITCH_VPN_MAX $SECONDS_SWITCH_VPN_MIN )"
+			
+	done
+}
+
+
+RouteModeVpn(){
+	local server
+	while true; do
+		for server in "${RANDOM_POOL[@]}"; do
+			
+			if ProtonVpnConnect "$server" "$( RandomSecureCore )"; then
+				count_fails="0"
+				NotifyVpnOk "$server"
+				[[ "$SWITCH_VPN_ONOFF" == "OFF" ]] && ExitHandler 0 "$TXT_SWITCH_OFF"
+			else
+				NotifyVpnError "$server" 
+				count_fails="$(( count_fails + 1 ))"
+				wait_retry=$(( count_fails * INCREASING_DELAY ))
+				(( count_fails <= MAX_CON_FAILS )) || ExitHandler 1 "$TXT_CON_FAILED"
+				sleep "$wait_retry"
+				continue
+			fi
+			SleepHandler "$( RandomizeSwitchTime $SECONDS_SWITCH_VPN_MAX $SECONDS_SWITCH_VPN_MIN )"	
+			
+		done
+	done
+}
+			
 
 #--------------- Functions Handler ------------------------------------#
 
@@ -456,31 +542,18 @@ ExitHandler(){
 
 #----------------------------------------------------------------------#
 
-
-
 main(){
 	local count_fails=0
 	local wait_retry=1
 	
-	
 	MessageStart
-	while true; do
-		
-		KillSwitchGuard
-		
-		if  RandomizeVpn; then
-			[[ "$SWITCH_VPN_ONOFF" == "OFF" ]] && ExitHandler 0 "$TXT_SWITCH_OFF"
-			count_fails="0"
-		else
-			count_fails="$(( count_fails + 1 ))"
-			wait_retry=$(( count_fails * INCREASING_DELAY ))
-			(( count_fails <= MAX_CON_FAILS )) || ExitHandler 1 "$TXT_CON_FAILED"
-			sleep "$wait_retry"
-			continue
-		fi
-		SleepHandler "$( RandomizeSwitchTime $SECONDS_SWITCH_VPN_MAX $SECONDS_SWITCH_VPN_MIN )"
-			
-	done
+	
+	if [[ "$MODE" == "RANDOM" ]]; then
+		RandomModeVpn
+	elif [[ "$MODE" == "ROUTE" ]]; then
+		RouteModeVpn
+	fi
+
 }
 
 #----------------------------------------------------------------------#
@@ -500,5 +573,7 @@ DepCheck "tput" || ExitHandler 10  "$TXT_REQUIRED_TPUT"
 DepCheck "awk" || ExitHandler 10 "$TXT_REQUIRED_AWK"
 DepCheck "protonvpn" || ExitHandler 10 "$TXT_REQUIRED_PROTON"
 
-EnsureSingleInstance
+EnsureSingleInstance 
+ParseCommandLineOptions "$@"
+
 main
